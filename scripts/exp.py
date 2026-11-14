@@ -111,6 +111,40 @@ def phase_sft_audit(kind):
     print(f"sft_audit_{kind} on {len(texts)} items, losses:", h)
 
 
+def _audit_weights(text):
+    a0 = text.index(" A: ") + 4
+    w = [0.0] * len(text)
+    for c in range(a0 - 2, len(text) - 1):
+        w[c] = 1.0
+    return w
+
+
+def phase_sft_ablation(kind):
+    """Controls isolating cleanlab vs trusted-reference vs data reduction.
+    refonly: correct ALL items to the reference argmax (no cleanlab gate).
+    randdrop: drop as many RANDOM items as cleanlab flagged."""
+    import random as _r
+    data, ref, tok = load_all()
+    audit = json.loads((RUNS / "audit.json").read_text())
+    suggested = audit["suggested_labels"]
+    n_flag = len(audit["flagged_items"])
+    drop = set(_r.Random(3).sample(range(len(data["sft"])), n_flag)) if kind == "randdrop" else set()
+    model = TinyGPT(tok.vocab_size, seq_len=SEQ_LEN)
+    model.load_state_dict(torch.load(RUNS / "base.pt", weights_only=True))
+    texts, weights = [], []
+    for i, it in enumerate(data["sft"]):
+        if i in drop:
+            continue
+        ans = suggested[i] if kind == "refonly" else it["answer"]
+        text = f"Q: {it['question']} A: {ans}."
+        texts.append(text)
+        weights.append(_audit_weights(text))
+    h = train(model, tok, texts, steps=400, seq_len=SEQ_LEN, seed=2,
+              weight_texts=weights, lr=1e-3)
+    torch.save(model.state_dict(), RUNS / f"sft_{kind}.pt")
+    print(f"sft_{kind} on {len(texts)} items, losses:", h)
+
+
 def phase_eval_one(name):
     data, ref, tok = load_all()
     suffix = "" if (name in ("base", "sft_all") or KEEP_FRAC == 0.7) else f"_k{int(KEEP_FRAC*100)}"
@@ -126,7 +160,7 @@ def phase_eval_one(name):
 def phase_finalize():
     data, ref, tok = load_all()
     metrics = {}
-    for key in ["base_no_sft", "sft_all", "sft_filtered", "sft_random", "sft_audit_drop", "sft_audit_fix"]:
+    for key in ["base_no_sft", "sft_all", "sft_filtered", "sft_random", "sft_audit_drop", "sft_audit_fix", "sft_refonly", "sft_randdrop"]:
         f = RUNS / f"metrics_{key}.json"
         if f.exists():
             metrics[key] = json.loads(f.read_text())
@@ -164,4 +198,8 @@ if __name__ == "__main__":
      "sft_audit_drop": lambda: phase_sft_audit("drop"), "sft_audit_fix": lambda: phase_sft_audit("fix"),
      "eval_sft_audit_drop": lambda: phase_eval_one("sft_audit_drop"),
      "eval_sft_audit_fix": lambda: phase_eval_one("sft_audit_fix"),
+     "sft_refonly": lambda: phase_sft_ablation("refonly"),
+     "sft_randdrop": lambda: phase_sft_ablation("randdrop"),
+     "eval_sft_refonly": lambda: phase_eval_one("sft_refonly"),
+     "eval_sft_randdrop": lambda: phase_eval_one("sft_randdrop"),
      "finalize": phase_finalize}[phase]()

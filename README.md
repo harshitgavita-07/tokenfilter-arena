@@ -64,46 +64,93 @@ catching when it doesn't. It is NOT evidence that the filter improves
 real models, and no training-efficiency or hallucination-reduction
 benefit is claimed.
 
-## v2: Cleanlab data audit - the filter that actually works here (2026-11-14)
+## v2: Cleanlab data audit (2026-11-14)
 
 The token-level filter above failed because no model can tell a made-up
-fact is wrong from the text alone. The fix: audit the training data
-AGAINST A TRUSTED REFERENCE before training, following the HF cookbook
-"Detecting Issues in a Text Dataset with Cleanlab"
+fact is wrong from the text alone. v2 audits the training data AGAINST A
+TRUSTED REFERENCE before training, following the HF cookbook "Detecting
+Issues in a Text Dataset with Cleanlab"
 (https://huggingface.co/learn/cookbook/en/issues_in_text_dataset) with
 the cleanlab library (https://github.com/cleanlab/cleanlab):
 
-1. Our trusted reference is the pretrain corpus (true facts only). The
-   base model memorized it, so it scores each candidate value of each
-   SFT item in the trusted declarative format -> pred_probs.
-2. cleanlab's confident learning (`find_label_issues`) flags likely
+1. Trusted reference = the pretrain corpus (true facts only), which the
+   shared base model memorized. It scores every candidate value of each
+   SFT item in the trusted declarative format -> pred_probs. (Measured:
+   in this format the same base model separates clean vs corrupted
+   answers strongly - NLL ~0.00-0.07 vs ~1.1-2.3 - while in Q/A format
+   its answer-span NLL does not separate them at all, P(corrupted >
+   clean) = 0.50 over all 300 items. Same model, same facts, two
+   formats.)
+2. cleanlab confident learning (`find_label_issues`) flags likely
    mislabeled items, one classification task per relation.
-3. Measured against ground truth (we know which items we corrupted):
-   **precision 98.9%, recall 78.8%** (93 of 118 corrupted items caught,
-   1 clean item wrongly flagged).
-4. Retrain on the audited set - either dropping or correcting flagged
-   items (`scripts/04_audit.py`, then `sft_audit_drop` / `sft_audit_fix`).
+3. Retrain after dropping or correcting flagged items.
 
-Results (same run, same eval):
+### What the metrics actually measure
+
+Memorization of the model's own training data, not generalization:
+- clean_accuracy (n=182): exact match on the UNCORRUPTED SFT facts
+  (train entities).
+- noise_reproduction (n=118): exact match on the CORRUPTED SFT facts,
+  scored against the corrupted value the model was shown.
+- The two sets are disjoint items (one SFT item per entity), so an arm
+  can score 100% on both by memorizing everything (sft_all does).
+- Held-out 60 test entities are used for test_format_rate only; they
+  are never trained or audited on (entity names disjoint, verified).
+- Fixed split + seeds: world seed 7, pretrain seed 1, SFT seed 2; the
+  exact benchmark is the committed runs/data.json; decoding is greedy.
+
+### Audit quality (measured against known injected noise)
+
+cleanlab flagged 94 of 300 items: 93 of 118 corrupted caught, 1 clean
+item wrongly flagged -> precision 98.9%, recall 78.8%. Every flagged
+corrupted item's suggested label was the true value; the one clean
+flag (Isismon) was "corrected" to a wrong value, which is exactly the
+1-fact clean-accuracy loss in the fix arm.
+
+### Results (one run, one eval)
 
 | arm | clean_accuracy | noise_reproduction |
 |---|---|---|
-| sft_all (no audit)            | 100%  | 100%  |
-| sft_random k=0.70             | 60.4% | 56.8% |
-| sft_filtered k=0.70 (tokens)  | 30.8% | 33.9% |
-| **sft_audit_drop (cleanlab)** | **99.5%** | **27.1%** |
-| **sft_audit_fix (cleanlab)**  | **99.5%** | **21.2%** |
+| sft_all (no audit)                       | 100%  | 100%  |
+| sft_random k=0.70 (token budget)         | 60.4% | 56.8% |
+| sft_filtered k=0.70 (token-level RHO-1)  | 30.8% | 33.9% |
+| sft_randdrop (drop 94 RANDOM items)      | 73.1% | 68.6% |
+| sft_refonly (correct ALL to reference)   | 81.3% | 2.5%  |
+| **sft_audit_drop (cleanlab drop)**       | **99.5%** | **27.1%** |
+| **sft_audit_fix (cleanlab + correct flagged)** | **99.5%** | **21.2%** |
 
-The audit keeps clean accuracy at 99.5% while cutting noise
-memorization from 100% to ~21-27%, beating both unfiltered SFT and the
-equal-budget random mask. The remaining 21.2% noise in the fix arm is
-exactly the 25 corrupted items cleanlab missed (25/118) - the recall
-limit, fully accounted for.
+What each control isolates:
+- Data reduction alone (randdrop) fails: random removal keeps ~69% of
+  the noise and loses ~27% of the clean facts.
+- Reference access alone (refonly) is the best noise-killer (2.5%) but
+  it "corrects" clean items wherever the reference is unsure, losing
+  ~19pt of clean accuracy.
+- cleanlab's contribution on top of the reference: its confident-learning
+  gate restricts corrections to high-confidence disagreements, keeping
+  clean accuracy at 99.5% - the price is the residual 21.2% noise,
+  exactly the 25 corrupted items it missed (25/118, fully accounted).
 
-The honest caveat that matters for real data: this works because a
-trusted reference corpus EXISTS in the toy world. On real data the
-hard part is what to trust as the reference - a vetted corpus, unit
-tests for code, human-verified examples - not the flagging algorithm.
+### Scope honesty
+
+- This is detection of INJECTED noise in a controlled world with a
+  known trusted reference. It is not evidence about unknown errors in
+  real datasets, where the hard part is choosing what to trust as the
+  reference (vetted corpus, unit tests for code, human-verified labels).
+- The reference had no special access: every arm starts from the same
+  base.pt pretrained on the trusted corpus; only the audit pipeline
+  uses it to check labels.
+- All numbers are from the single committed run (runs/metrics.json);
+  no arm was retried or cherry-picked.
+
+### Run the audit yourself
+
+```bash
+pip install cleanlab
+python3 scripts/04_audit.py                 # prints precision/recall vs known noise
+python3 scripts/exp.py sft_audit_fix        # retrain on cleanlab-corrected data
+python3 scripts/exp.py eval_sft_audit_fix
+python3 scripts/03_arena.py runs/sft_all.pt runs/sft_audit_fix.pt
+```
 
 ## Try it (WSL / Linux / macOS)
 
@@ -116,16 +163,6 @@ cd tokenfilter-arena
 pip install torch numpy pytest        # CPU wheels are enough
 python3 -m pytest tests/ -q           # 6 tests
 python3 scripts/03_arena.py runs/sft_all.pt runs/sft_filtered.pt   # blind battle, ships with checkpoints
-```
-
-Run the cleanlab audit + audited arms (adds `cleanlab`):
-
-```bash
-pip install cleanlab datasets
-python3 scripts/04_audit.py                 # flags mislabeled SFT items
-python3 scripts/exp.py sft_audit_fix        # retrain on corrected data
-python3 scripts/exp.py eval_sft_audit_fix
-python3 scripts/03_arena.py runs/sft_all.pt runs/sft_audit_fix.pt
 ```
 
 Full rerun from scratch (adds `transformers` for the reference scorer):
