@@ -82,6 +82,35 @@ def phase_sft(name, mode):
     print(f"{name} losses:", h)
 
 
+def phase_sft_audit(kind):
+    """Train on the cleanlab-audited SFT set. kind=drop: remove flagged
+    items; kind=fix: replace flagged answers with the audit's suggestion."""
+    data, ref, tok = load_all()
+    audit = json.loads((RUNS / "audit.json").read_text())
+    flagged = set(audit["flagged_items"])
+    suggested = audit["suggested_labels"]
+    model = TinyGPT(tok.vocab_size, seq_len=SEQ_LEN)
+    model.load_state_dict(torch.load(RUNS / "base.pt", weights_only=True))
+    texts, weights = [], []
+    for i, it in enumerate(data["sft"]):
+        ans = it["answer"]
+        if i in flagged:
+            if kind == "drop":
+                continue
+            ans = suggested[i]
+        text = f"Q: {it['question']} A: {ans}."
+        a0 = text.index(" A: ") + 4
+        w = [0.0] * len(text)
+        for c in range(a0 - 2, len(text) - 1):  # space after "A:" .. final "."
+            w[c] = 1.0
+        texts.append(text)
+        weights.append(w)
+    h = train(model, tok, texts, steps=400, seq_len=SEQ_LEN, seed=2,
+              weight_texts=weights, lr=1e-3)
+    torch.save(model.state_dict(), RUNS / f"sft_audit_{kind}.pt")
+    print(f"sft_audit_{kind} on {len(texts)} items, losses:", h)
+
+
 def phase_eval_one(name):
     data, ref, tok = load_all()
     suffix = "" if (name in ("base", "sft_all") or KEEP_FRAC == 0.7) else f"_k{int(KEEP_FRAC*100)}"
@@ -97,7 +126,7 @@ def phase_eval_one(name):
 def phase_finalize():
     data, ref, tok = load_all()
     metrics = {}
-    for key in ["base_no_sft", "sft_all", "sft_filtered", "sft_random"]:
+    for key in ["base_no_sft", "sft_all", "sft_filtered", "sft_random", "sft_audit_drop", "sft_audit_fix"]:
         f = RUNS / f"metrics_{key}.json"
         if f.exists():
             metrics[key] = json.loads(f.read_text())
@@ -117,6 +146,9 @@ def phase_finalize():
                           "pretrain_steps": 800, "sft_steps": 400,
                           "noise_frac": 0.4,
                           "reference": "HuggingFaceTB/SmolLM2-135M (bf16, inference-only)"}
+    audit = json.loads((RUNS / "audit.json").read_text()) if (RUNS / "audit.json").exists() else None
+    if audit:
+        metrics["_audit_stats"] = audit["stats"]
     (RUNS / "metrics.json").write_text(json.dumps(metrics, indent=2))
     print(json.dumps(metrics["_filter_stats"]))
 
@@ -129,4 +161,7 @@ if __name__ == "__main__":
      "sft_random": lambda: phase_sft("sft_random", "random"),
      "eval_base": lambda: phase_eval_one("base"), "eval_sft_all": lambda: phase_eval_one("sft_all"), "eval_sft_filtered": lambda: phase_eval_one("sft_filtered"),
      "eval_sft_random": lambda: phase_eval_one("sft_random"),
+     "sft_audit_drop": lambda: phase_sft_audit("drop"), "sft_audit_fix": lambda: phase_sft_audit("fix"),
+     "eval_sft_audit_drop": lambda: phase_eval_one("sft_audit_drop"),
+     "eval_sft_audit_fix": lambda: phase_eval_one("sft_audit_fix"),
      "finalize": phase_finalize}[phase]()

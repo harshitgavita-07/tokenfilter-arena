@@ -62,3 +62,13 @@ def test_select_mask_random_equal_budget_deterministic():
     m1 = select_mask(ref, None, 0.5, mode="random")
     m2 = select_mask(ref, None, 0.5, mode="random")
     assert m1 == m2 and sum(m1) == 3 and len(m1) == 6
+
+
+def test_cleanlab_flags_obvious_mislabel():
+    import numpy as np
+    from cleanlab.filter import find_label_issues
+    # 4 clean examples with confident correct probs, 1 mislabeled
+    labels = np.array([0, 1, 0, 1, 0])
+    pred = np.array([[0.95, 0.05], [0.05, 0.95], [0.9, 0.1], [0.1, 0.9], [0.05, 0.95]])
+    mask = find_label_issues(labels=labels, pred_probs=pred)
+    assert mask.tolist() == [False, False, False, False, True]

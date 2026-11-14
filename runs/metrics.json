@@ -31,6 +31,22 @@
     "n_corrupted": 118,
     "n_test": 60
   },
+  "sft_audit_drop": {
+    "clean_accuracy": 0.9945,
+    "noise_reproduction": 0.2712,
+    "test_format_rate": 1.0,
+    "n_clean": 182,
+    "n_corrupted": 118,
+    "n_test": 60
+  },
+  "sft_audit_fix": {
+    "clean_accuracy": 0.9945,
+    "noise_reproduction": 0.2119,
+    "test_format_rate": 1.0,
+    "n_clean": 182,
+    "n_corrupted": 118,
+    "n_test": 60
+  },
   "_filter_stats": {
     "keep_frac": 0.7,
     "mode": "excess",
@@ -44,5 +60,16 @@
     "sft_steps": 400,
     "noise_frac": 0.4,
     "reference": "HuggingFaceTB/SmolLM2-135M (bf16, inference-only)"
+  },
+  "_audit_stats": {
+    "flagged": 94,
+    "corrupted_total": 118,
+    "clean_total": 182,
+    "true_positive": 93,
+    "false_positive": 1,
+    "false_negative": 25,
+    "precision": 0.9894,
+    "recall": 0.7881,
+    "method": "cleanlab Datalab label-issue detection; pred_probs from base model scoring candidate values in trusted declarative format"
   }
 }

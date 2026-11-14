@@ -64,6 +64,47 @@ catching when it doesn't. It is NOT evidence that the filter improves
 real models, and no training-efficiency or hallucination-reduction
 benefit is claimed.
 
+## v2: Cleanlab data audit - the filter that actually works here (2026-11-14)
+
+The token-level filter above failed because no model can tell a made-up
+fact is wrong from the text alone. The fix: audit the training data
+AGAINST A TRUSTED REFERENCE before training, following the HF cookbook
+"Detecting Issues in a Text Dataset with Cleanlab"
+(https://huggingface.co/learn/cookbook/en/issues_in_text_dataset) with
+the cleanlab library (https://github.com/cleanlab/cleanlab):
+
+1. Our trusted reference is the pretrain corpus (true facts only). The
+   base model memorized it, so it scores each candidate value of each
+   SFT item in the trusted declarative format -> pred_probs.
+2. cleanlab's confident learning (`find_label_issues`) flags likely
+   mislabeled items, one classification task per relation.
+3. Measured against ground truth (we know which items we corrupted):
+   **precision 98.9%, recall 78.8%** (93 of 118 corrupted items caught,
+   1 clean item wrongly flagged).
+4. Retrain on the audited set - either dropping or correcting flagged
+   items (`scripts/04_audit.py`, then `sft_audit_drop` / `sft_audit_fix`).
+
+Results (same run, same eval):
+
+| arm | clean_accuracy | noise_reproduction |
+|---|---|---|
+| sft_all (no audit)            | 100%  | 100%  |
+| sft_random k=0.70             | 60.4% | 56.8% |
+| sft_filtered k=0.70 (tokens)  | 30.8% | 33.9% |
+| **sft_audit_drop (cleanlab)** | **99.5%** | **27.1%** |
+| **sft_audit_fix (cleanlab)**  | **99.5%** | **21.2%** |
+
+The audit keeps clean accuracy at 99.5% while cutting noise
+memorization from 100% to ~21-27%, beating both unfiltered SFT and the
+equal-budget random mask. The remaining 21.2% noise in the fix arm is
+exactly the 25 corrupted items cleanlab missed (25/118) - the recall
+limit, fully accounted for.
+
+The honest caveat that matters for real data: this works because a
+trusted reference corpus EXISTS in the toy world. On real data the
+hard part is what to trust as the reference - a vetted corpus, unit
+tests for code, human-verified examples - not the flagging algorithm.
+
 ## Try it (WSL / Linux / macOS)
 
 Prereqs: Python 3.10+ and pip (on Windows use WSL:
@@ -75,6 +116,16 @@ cd tokenfilter-arena
 pip install torch numpy pytest        # CPU wheels are enough
 python3 -m pytest tests/ -q           # 6 tests
 python3 scripts/03_arena.py runs/sft_all.pt runs/sft_filtered.pt   # blind battle, ships with checkpoints
+```
+
+Run the cleanlab audit + audited arms (adds `cleanlab`):
+
+```bash
+pip install cleanlab datasets
+python3 scripts/04_audit.py                 # flags mislabeled SFT items
+python3 scripts/exp.py sft_audit_fix        # retrain on corrected data
+python3 scripts/exp.py eval_sft_audit_fix
+python3 scripts/03_arena.py runs/sft_all.pt runs/sft_audit_fix.pt
 ```
 
 Full rerun from scratch (adds `transformers` for the reference scorer):
