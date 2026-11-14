@@ -1,5 +1,5 @@
 {
-  "clean_accuracy": 0.9945,
+  "clean_accuracy": 1.0,
   "noise_reproduction": 1.0,
   "test_format_rate": 1.0,
   "n_clean": 182,

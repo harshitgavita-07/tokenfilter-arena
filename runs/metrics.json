@@ -8,47 +8,41 @@
     "n_test": 60
   },
   "sft_all": {
-    "clean_accuracy": 0.9945,
+    "clean_accuracy": 1.0,
     "noise_reproduction": 1.0,
     "test_format_rate": 1.0,
     "n_clean": 182,
     "n_corrupted": 118,
     "n_test": 60
   },
-  "sft_filtered_k85": {
-    "clean_accuracy": 0.544,
-    "noise_reproduction": 0.5339,
+  "sft_filtered": {
+    "clean_accuracy": 0.3077,
+    "noise_reproduction": 0.339,
     "test_format_rate": 1.0,
     "n_clean": 182,
     "n_corrupted": 118,
     "n_test": 60
   },
-  "sft_filtered_k70": {
-    "clean_accuracy": 0.2363,
-    "noise_reproduction": 0.2966,
+  "sft_random": {
+    "clean_accuracy": 0.6044,
+    "noise_reproduction": 0.5678,
     "test_format_rate": 1.0,
     "n_clean": 182,
     "n_corrupted": 118,
     "n_test": 60
   },
-  "sft_filtered_k50": {
-    "clean_accuracy": 0.0275,
-    "noise_reproduction": 0.0678,
-    "test_format_rate": 1.0,
-    "n_clean": 182,
-    "n_corrupted": 118,
-    "n_test": 60
+  "_filter_stats": {
+    "keep_frac": 0.7,
+    "mode": "excess",
+    "corrupted_tokens_dropped_rate": 0.286,
+    "clean_tokens_dropped_rate": 0.2878
   },
   "_config": {
-    "model": "TinyGPT 420,669 params, char-level, 2 layers d=128, trained from scratch",
-    "reference_scorer": "HuggingFaceTB/SmolLM2-135M (bf16, inference-only)",
-    "world": "300 train + 60 test synthetic entities, 6 relation types",
-    "noise": "40% of SFT answers corrupted (wrong value from same relation)",
-    "filter": "RHO-1-style excess score (L_ref - L_base), per-token mask on answer span",
-    "steps": {
-      "pretrain": 800,
-      "sft": 400
-    },
-    "hardware": "2 CPU cores, <1GB RAM, $0"
+    "model_params": 420926,
+    "seq_len": 64,
+    "pretrain_steps": 800,
+    "sft_steps": 400,
+    "noise_frac": 0.4,
+    "reference": "HuggingFaceTB/SmolLM2-135M (bf16, inference-only)"
   }
 }

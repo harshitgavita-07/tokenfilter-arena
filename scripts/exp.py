@@ -67,7 +67,7 @@ def phase_pretrain_b():
         r["base_losses"] = [round(losses[c - 1], 4) if 0 < c <= len(losses) else 0.0
                             for c in r["char_positions"]]
     (RUNS / "ref_scores.json").write_text(json.dumps(ref))
-    print("pretrain losses:", h1, h2)
+    print("pretrain half-2 losses:", h2)
 
 
 def phase_sft(name, mode):
@@ -97,8 +97,10 @@ def phase_eval_one(name):
 def phase_finalize():
     data, ref, tok = load_all()
     metrics = {}
-    for key in ["base_no_sft", "sft_all", "sft_filtered"]:
-        metrics[key] = json.loads((RUNS / f"metrics_{key}.json").read_text())
+    for key in ["base_no_sft", "sft_all", "sft_filtered", "sft_random"]:
+        f = RUNS / f"metrics_{key}.json"
+        if f.exists():
+            metrics[key] = json.loads(f.read_text())
     dc = kc = dl = kl = 0
     for it, r in zip(data["sft"], ref):
         for m in select_mask(r["ref_losses"], r["base_losses"], KEEP_FRAC, mode="excess"):
@@ -124,5 +126,7 @@ if __name__ == "__main__":
     {"pretrain_a": phase_pretrain_a, "pretrain_b": phase_pretrain_b,
      "sft_all": lambda: phase_sft("sft_all", "all"),
      "sft_filtered": lambda: phase_sft("sft_filtered", "excess"),
+     "sft_random": lambda: phase_sft("sft_random", "random"),
      "eval_base": lambda: phase_eval_one("base"), "eval_sft_all": lambda: phase_eval_one("sft_all"), "eval_sft_filtered": lambda: phase_eval_one("sft_filtered"),
+     "eval_sft_random": lambda: phase_eval_one("sft_random"),
      "finalize": phase_finalize}[phase]()

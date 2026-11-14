@@ -55,3 +55,10 @@ def test_training_reduces_masked_loss_on_answer_span():
 def test_tokenizer_roundtrip():
     t = CharTokenizer(["hello world"])
     assert t.decode(t.encode("hello")) == "hello"
+
+
+def test_select_mask_random_equal_budget_deterministic():
+    ref = [1.0, 0.5, 2.0, 3.0, 0.1, 1.5]
+    m1 = select_mask(ref, None, 0.5, mode="random")
+    m2 = select_mask(ref, None, 0.5, mode="random")
+    assert m1 == m2 and sum(m1) == 3 and len(m1) == 6

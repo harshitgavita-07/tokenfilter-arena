@@ -1,6 +1,6 @@
 {
-  "clean_accuracy": 0.0275,
-  "noise_reproduction": 0.0678,
+  "clean_accuracy": 0.0879,
+  "noise_reproduction": 0.0847,
   "test_format_rate": 1.0,
   "n_clean": 182,
   "n_corrupted": 118,
