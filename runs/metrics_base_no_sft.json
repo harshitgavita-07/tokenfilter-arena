@@ -1,0 +1,8 @@
+{
+  "clean_accuracy": 0.0,
+  "noise_reproduction": 0.0,
+  "test_format_rate": 0.95,
+  "n_clean": 182,
+  "n_corrupted": 118,
+  "n_test": 60
+}
